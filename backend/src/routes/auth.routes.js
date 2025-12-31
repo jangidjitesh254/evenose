@@ -11,12 +11,15 @@ const {
 } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth');
 
+// Public routes
 router.post('/register', register);
 router.post('/login', login);
-router.get('/me', protect, getMe);
-router.put('/profile', protect, updateProfile);
-router.put('/change-password', protect, changePassword);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);
+
+// Protected routes
+router.get('/me', protect, getMe);
+router.put('/updateprofile', protect, updateProfile);  // Changed from /profile
+router.put('/changepassword', protect, changePassword);  // Changed from /change-password
 
 module.exports = router;

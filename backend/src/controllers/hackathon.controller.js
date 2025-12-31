@@ -397,6 +397,22 @@ exports.acceptCoordinatorInvitation = async (req, res) => {
   try {
     const { hackathonId } = req.body;
 
+    // Check if user is already a participant in this hackathon
+    const Team = require('../models/Team');
+    const isParticipant = await Team.findOne({
+      hackathon: hackathonId,
+      members: req.user._id
+    });
+
+    if (isParticipant) {
+      return res.status(400).json({
+        success: false,
+        message: 'You are already a participant in this hackathon. Please leave your team first to accept this coordinator invitation.',
+        isParticipant: true,
+        teamName: isParticipant.teamName
+      });
+    }
+
     const user = await User.findById(req.user._id);
     const coordination = user.coordinatorFor.find(
       c => c.hackathon.toString() === hackathonId && c.status === 'pending'
@@ -500,9 +516,9 @@ exports.getCoordinators = async (req, res) => {
     console.log('=== getCoordinators Debug ===');
     console.log('Hackathon ID:', req.params.id);
     console.log('User ID:', req.user._id);
-    
+
     const hackathon = await Hackathon.findById(req.params.id);
-    
+
     if (!hackathon) {
       console.log('❌ Hackathon not found');
       return res.status(404).json({
@@ -521,41 +537,36 @@ exports.getCoordinators = async (req, res) => {
 
     console.log('Found users with coordinator entries:', allUsers.length);
 
-    const coordinators = [];
-    const pending = [];
+    const allCoordinators = [];
 
     allUsers.forEach(user => {
       const coordEntry = user.coordinatorFor.find(
         c => c.hackathon.toString() === hackathon._id.toString()
       );
-      
+
       if (coordEntry) {
-        const userData = {
-          _id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          username: user.username,
-          profilePicture: user.profilePicture,
+        allCoordinators.push({
+          user: {
+            _id: user._id,
+            fullName: user.fullName,
+            email: user.email,
+            username: user.username,
+            profilePicture: user.profilePicture,
+          },
           permissions: coordEntry.permissions,
           invitedAt: coordEntry.invitedAt,
           invitedBy: coordEntry.invitedBy,
-          status: coordEntry.status
-        };
-
-        if (coordEntry.status === 'accepted') {
-          coordinators.push(userData);
-        } else {
-          pending.push(userData);
-        }
+          status: coordEntry.status,
+          acceptedAt: coordEntry.acceptedAt
+        });
       }
     });
 
-    console.log('✅ Coordinators:', coordinators.length, 'Pending:', pending.length);
+    console.log('✅ Total coordinators (all statuses):', allCoordinators.length);
 
     res.status(200).json({
       success: true,
-      coordinators,
-      pending
+      coordinators: allCoordinators
     });
   } catch (error) {
     console.error('❌ getCoordinators error:', error);
@@ -811,3 +822,72 @@ exports.acceptJudgeInvitation = async (req, res) => {
 };
 
 module.exports = exports;
+
+// @desc    Search users for coordinator invitation with participant status
+// @route   GET /api/hackathons/:id/search-coordinators
+// @access  Private (Organizer)
+exports.searchCoordinatorsWithStatus = async (req, res) => {
+  try {
+    const { query } = req.query;
+    const hackathonId = req.params.id;
+
+    if (!query || query.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query must be at least 2 characters'
+      });
+    }
+
+    const Team = require('../models/Team');
+    
+    // Search users by username or email
+    const users = await User.find({
+      $or: [
+        { username: { $regex: query, $options: 'i' } },
+        { email: { $regex: query, $options: 'i' } },
+        { fullName: { $regex: query, $options: 'i' } }
+      ]
+    })
+    .select('_id username email fullName')
+    .limit(10);
+
+    // Check each user's status for this hackathon
+    const usersWithStatus = await Promise.all(
+      users.map(async (user) => {
+        // Check if participant
+        const team = await Team.findOne({
+          hackathon: hackathonId,
+          members: user._id
+        }).select('teamName');
+
+        // Check if already coordinator
+        const userDoc = await User.findById(user._id);
+        const coordEntry = userDoc.coordinatorFor?.find(
+          c => c.hackathon.toString() === hackathonId.toString()
+        );
+
+        return {
+          _id: user._id,
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+          isParticipant: !!team,
+          teamName: team?.teamName,
+          isCoordinator: coordEntry?.status === 'accepted',
+          isPendingCoordinator: coordEntry?.status === 'pending'
+        };
+      })
+    );
+
+    res.status(200).json({
+      success: true,
+      users: usersWithStatus
+    });
+  } catch (error) {
+    console.error('searchCoordinatorsWithStatus error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};

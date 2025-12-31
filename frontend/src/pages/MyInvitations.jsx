@@ -45,7 +45,7 @@ export default function MyInvitations() {
       const invitesWithDetails = await Promise.all(
         pendingInvites.map(async (invite) => {
           try {
-            // FIX: Check if hackathon is already populated (has title property)
+            // Check if hackathon is already populated (has title property)
             if (invite.hackathon?.title) {
               // Already populated, use it directly
               return {
@@ -79,11 +79,16 @@ export default function MyInvitations() {
   };
 
   const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    if (!date) return 'Not set';
+    try {
+      return new Date(date).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return 'Invalid date';
+    }
   };
 
   const handleAccept = async (hackathonId) => {
@@ -97,7 +102,14 @@ export default function MyInvitations() {
       fetchInvitations();
     } catch (error) {
       console.error('Failed to accept invitation:', error);
-      toast.error(error.response?.data?.message || 'Failed to accept invitation');
+      const message = error.response?.data?.message || 'Failed to accept invitation';
+      
+      // Check if user is a participant
+      if (error.response?.data?.isParticipant) {
+        toast.error(message, { duration: 6000 });
+      } else {
+        toast.error(message);
+      }
     } finally {
       setAcceptingId(null);
     }
@@ -182,158 +194,161 @@ export default function MyInvitations() {
         {/* Invitations List */}
         {invitations.length > 0 ? (
           <div className="space-y-4">
-            {invitations.map((invitation, index) => (
-              <motion.div
-                key={invitation._id || index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="bg-white border-2 border-gray-200 rounded-3xl overflow-hidden hover:shadow-lg transition-all"
-              >
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <Shield className="w-6 h-6 text-indigo-600" />
-                        <h3 className="text-2xl font-bold text-gray-900">
-                          Coordinator Invitation
-                        </h3>
+            {invitations.map((invitation, index) => {
+              const hack = invitation.hackathonDetails;
+              return (
+                <motion.div
+                  key={invitation._id || index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="bg-white border-2 border-gray-200 rounded-3xl overflow-hidden hover:shadow-lg transition-all"
+                >
+                  <div className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <Shield className="w-6 h-6 text-indigo-600" />
+                          <h3 className="text-2xl font-bold text-gray-900">
+                            Coordinator Invitation
+                          </h3>
+                        </div>
+                        <Link
+                          to={`/hackathons/${hack._id}`}
+                          className="text-xl font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2 mb-2"
+                        >
+                          {hack.title}
+                          <ExternalLink className="w-5 h-5" />
+                        </Link>
+                        <p className="text-gray-600 text-sm">
+                          {hack.description?.substring(0, 150) || 'No description available'}...
+                        </p>
                       </div>
-                      <Link
-                        to={`/hackathons/${invitation.hackathonDetails._id}`}
-                        className="text-xl font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2 mb-2"
+                      <Badge variant="warning">
+                        <Clock className="w-4 h-4 mr-1" />
+                        Pending
+                      </Badge>
+                    </div>
+
+                    {/* Hackathon Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-2xl">
+                      <div className="flex items-center gap-3">
+                        <Calendar className="w-5 h-5 text-gray-400" />
+                        <div>
+                          <div className="text-xs text-gray-500">Start Date</div>
+                          <div className="font-semibold text-gray-900">
+                            {formatDate(hack.startDate || hack.hackathonStartDate)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <MapPin className="w-5 h-5 text-gray-400" />
+                        <div>
+                          <div className="text-xs text-gray-500">Mode</div>
+                          <div className="font-semibold text-gray-900 capitalize">
+                            {hack.mode || hack.eventMode || 'Not specified'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Mail className="w-5 h-5 text-gray-400" />
+                        <div>
+                          <div className="text-xs text-gray-500">Invited</div>
+                          <div className="font-semibold text-gray-900">
+                            {formatDate(invitation.invitedAt)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Permissions */}
+                    <div className="mb-6 p-4 bg-indigo-50 rounded-2xl border-2 border-indigo-100">
+                      <h4 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Your Assigned Permissions:
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {invitation.permissions?.canViewTeams && (
+                          <div className="flex items-center gap-2 text-sm text-indigo-700">
+                            <Eye className="w-4 h-4" />
+                            <span>View Teams</span>
+                          </div>
+                        )}
+                        {invitation.permissions?.canCheckIn && (
+                          <div className="flex items-center gap-2 text-sm text-indigo-700">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>Check-in</span>
+                          </div>
+                        )}
+                        {invitation.permissions?.canAssignTables && (
+                          <div className="flex items-center gap-2 text-sm text-indigo-700">
+                            <Users className="w-4 h-4" />
+                            <span>Assign Tables</span>
+                          </div>
+                        )}
+                        {invitation.permissions?.canViewSubmissions && (
+                          <div className="flex items-center gap-2 text-sm text-indigo-700">
+                            <Eye className="w-4 h-4" />
+                            <span>View Submissions</span>
+                          </div>
+                        )}
+                        {invitation.permissions?.canEliminateTeams && (
+                          <div className="flex items-center gap-2 text-sm text-orange-700">
+                            <AlertTriangle className="w-4 h-4" />
+                            <span>Eliminate Teams</span>
+                          </div>
+                        )}
+                        {invitation.permissions?.canCommunicate && (
+                          <div className="flex items-center gap-2 text-sm text-indigo-700">
+                            <Mail className="w-4 h-4" />
+                            <span>Communicate</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={() => handleAccept(hack._id)}
+                        disabled={acceptingId === hack._id || decliningId === hack._id}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
                       >
-                        {invitation.hackathonDetails.title}
-                        <ExternalLink className="w-5 h-5" />
-                      </Link>
-                      <p className="text-gray-600 text-sm">
-                        {invitation.hackathonDetails.description?.substring(0, 150)}...
-                      </p>
-                    </div>
-                    <Badge variant="warning">
-                      <Clock className="w-4 h-4 mr-1" />
-                      Pending
-                    </Badge>
-                  </div>
-
-                  {/* Hackathon Details */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-2xl">
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-5 h-5 text-gray-400" />
-                      <div>
-                        <div className="text-xs text-gray-500">Start Date</div>
-                        <div className="font-semibold text-gray-900">
-                          {formatDate(invitation.hackathonDetails.hackathonStartDate)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-5 h-5 text-gray-400" />
-                      <div>
-                        <div className="text-xs text-gray-500">Mode</div>
-                        <div className="font-semibold text-gray-900 capitalize">
-                          {invitation.hackathonDetails.mode}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-5 h-5 text-gray-400" />
-                      <div>
-                        <div className="text-xs text-gray-500">Invited</div>
-                        <div className="font-semibold text-gray-900">
-                          {formatDate(invitation.invitedAt)}
-                        </div>
-                      </div>
+                        {acceptingId === hack._id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            Accepting...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Accept Invitation
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleDecline(hack._id)}
+                        disabled={acceptingId === hack._id || decliningId === hack._id}
+                        className="flex-1 text-red-600 border-red-600 hover:bg-red-50"
+                      >
+                        {decliningId === hack._id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            Declining...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Decline
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
-
-                  {/* Permissions */}
-                  <div className="mb-6 p-4 bg-indigo-50 rounded-2xl border-2 border-indigo-100">
-                    <h4 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
-                      Your Assigned Permissions:
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {invitation.permissions?.canViewTeams && (
-                        <div className="flex items-center gap-2 text-sm text-indigo-700">
-                          <Eye className="w-4 h-4" />
-                          <span>View Teams</span>
-                        </div>
-                      )}
-                      {invitation.permissions?.canCheckIn && (
-                        <div className="flex items-center gap-2 text-sm text-indigo-700">
-                          <CheckCircle className="w-4 h-4" />
-                          <span>Check-in</span>
-                        </div>
-                      )}
-                      {invitation.permissions?.canAssignTables && (
-                        <div className="flex items-center gap-2 text-sm text-indigo-700">
-                          <Users className="w-4 h-4" />
-                          <span>Assign Tables</span>
-                        </div>
-                      )}
-                      {invitation.permissions?.canViewSubmissions && (
-                        <div className="flex items-center gap-2 text-sm text-indigo-700">
-                          <Eye className="w-4 h-4" />
-                          <span>View Submissions</span>
-                        </div>
-                      )}
-                      {invitation.permissions?.canEliminateTeams && (
-                        <div className="flex items-center gap-2 text-sm text-orange-700">
-                          <AlertTriangle className="w-4 h-4" />
-                          <span>Eliminate Teams</span>
-                        </div>
-                      )}
-                      {invitation.permissions?.canCommunicate && (
-                        <div className="flex items-center gap-2 text-sm text-indigo-700">
-                          <Mail className="w-4 h-4" />
-                          <span>Communicate</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-3">
-                    <Button
-                      onClick={() => handleAccept(invitation.hackathonDetails._id)}
-                      disabled={acceptingId === invitation.hackathonDetails._id || decliningId === invitation.hackathonDetails._id}
-                      className="flex-1 bg-green-600 hover:bg-green-700"
-                    >
-                      {acceptingId === invitation.hackathonDetails._id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          Accepting...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Accept Invitation
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleDecline(invitation.hackathonDetails._id)}
-                      disabled={acceptingId === invitation.hackathonDetails._id || decliningId === invitation.hackathonDetails._id}
-                      className="flex-1 text-red-600 border-red-600 hover:bg-red-50"
-                    >
-                      {decliningId === invitation.hackathonDetails._id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          Declining...
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-4 h-4 mr-2" />
-                          Decline
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         ) : (
           <div className="bg-white border-2 border-gray-200 rounded-3xl p-12 text-center">

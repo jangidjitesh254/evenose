@@ -15,6 +15,7 @@ const {
   removeCoordinator,
   cancelCoordinatorInvite,
   resendCoordinatorInvite,
+  searchCoordinatorsWithStatus,
   inviteJudge,
   acceptJudgeInvitation
 } = require('../controllers/hackathon.controller');
@@ -29,7 +30,7 @@ router.get('/', getHackathons);
 router.post('/', protect, createHackathon);
 router.get('/my/organized', protect, getMyHackathons);
 router.get('/my/coordinations', protect, getMyCoordinations);
-router.post('/coordinators/accept/:token', protect, acceptCoordinatorInvitation);
+router.post('/coordinators/accept', protect, acceptCoordinatorInvitation);
 router.post('/judges/accept/:token', protect, acceptJudgeInvitation);
 
 // Parameterized routes - come AFTER specific routes
@@ -38,6 +39,7 @@ router.put('/:id', protect, isOrganizer, updateHackathon);
 router.delete('/:id', protect, isOrganizer, deleteHackathon);
 
 // Coordinator management
+router.get('/:id/search-coordinators', protect, isOrganizer, searchCoordinatorsWithStatus);
 router.get('/:id/coordinators', protect, getCoordinators);
 router.post('/:id/coordinators/invite', protect, isOrganizer, inviteCoordinator);
 router.delete('/:id/coordinators/:userId', protect, isOrganizer, removeCoordinator);

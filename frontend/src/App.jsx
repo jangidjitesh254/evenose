@@ -3,9 +3,11 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { useAuthStore } from "./store";
+import { useEffect, useState } from "react";
 import Navbar from "./components/layout/Navbar";
 import Footer from "./components/layout/Footer";
 import "./App.css";
@@ -14,6 +16,8 @@ import "./App.css";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import AdminDashboard from "./pages/admin/Dashboard";
 import Hackathons from "./pages/Hackathons";
@@ -32,30 +36,95 @@ import TeamApprovals from "./pages/TeamApprovals";
 import CoordinatorTest from './pages/CoordinatorTest';
 import MyInvitations from './pages/MyInvitations';
 
-
-
-
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }) {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, token, initialize } = useAuthStore();
+  const location = useLocation();
+  const [isChecking, setIsChecking] = useState(true);
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  useEffect(() => {
+    // Initialize auth state from localStorage
+    const checkAuth = () => {
+      if (initialize) {
+        initialize();
+      }
+      setIsChecking(false);
+    };
+    
+    checkAuth();
+  }, [initialize]);
+
+  // Show loading while checking authentication
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
-  if (allowedRoles && (!user?.roles || !allowedRoles.some(r => user.roles.includes(r)))) {
-    return <Navigate to="/unauthorized" replace />;
+  // Check if user is authenticated
+  const hasToken = !!token || !!localStorage.getItem('token');
+  const hasUser = !!user || !!localStorage.getItem('user');
+
+  if (!isAuthenticated || !hasToken || !hasUser) {
+    console.log('🔴 Not authenticated, redirecting to login');
+    // Save the location they were trying to access
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Check role-based access
+  if (allowedRoles && user?.roles) {
+    const hasRole = allowedRoles.some(role => user.roles.includes(role));
+    if (!hasRole) {
+      console.log('🔴 Unauthorized role');
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   return children;
 }
 
-// Public Route Component (redirect if authenticated)
+// Public Route Component
 function PublicRoute({ children }) {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, token, initialize } = useAuthStore();
+  const location = useLocation();
+  const [isChecking, setIsChecking] = useState(true);
 
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+  useEffect(() => {
+    // Initialize auth state from localStorage
+    const checkAuth = () => {
+      if (initialize) {
+        initialize();
+      }
+      setIsChecking(false);
+    };
+    
+    checkAuth();
+  }, [initialize]);
+
+  // Show loading while checking
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const hasToken = !!token || !!localStorage.getItem('token');
+
+  if (isAuthenticated && hasToken) {
+    console.log('✅ Already authenticated, redirecting');
+    // Redirect to the page they were trying to access, or dashboard
+    const from = location.state?.from?.pathname || '/dashboard';
+    return <Navigate to={from} replace />;
   }
 
   return children;
@@ -63,7 +132,7 @@ function PublicRoute({ children }) {
 
 function DashboardRouter() {
   const { user } = useAuthStore();
-  const roles = user.roles || [];
+  const roles = user?.roles || [];
 
   if (roles.includes("admin")) return <AdminDashboard />;
   if (roles.includes("judge")) return <JudgeDashboard />;
@@ -71,10 +140,17 @@ function DashboardRouter() {
   return <Dashboard />; // student / default user
 }
 
-
-
 function App() {
-  
+  const { initialize } = useAuthStore();
+
+  useEffect(() => {
+    // Initialize auth state on app mount
+    console.log('🚀 App initializing auth state...');
+    if (initialize) {
+      initialize();
+    }
+  }, [initialize]);
+
   return (
     <Router>
       <div className="flex flex-col min-h-screen">
@@ -96,9 +172,6 @@ function App() {
               }
             />
 
-              <Route path="/test-coordinator" element={<CoordinatorTest />} />
-              <Route path="/invitations" element={<ProtectedRoute><MyInvitations /></ProtectedRoute>} />
-
             <Route
               path="/register"
               element={
@@ -108,10 +181,22 @@ function App() {
               }
             />
 
+            {/* Forgot Password Routes - Public */}
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
+
             {/* Protected Routes */}
+            <Route path="/test-coordinator" element={<CoordinatorTest />} />
+            
+            <Route 
+              path="/invitations" 
+              element={
+                <ProtectedRoute>
+                  <MyInvitations />
+                </ProtectedRoute>
+              } 
+            />
 
-
-            {/* Admin Routes */}
             <Route
               path="/dashboard"
               element={
@@ -120,6 +205,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/profile"
               element={
@@ -128,6 +214,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/notifications"
               element={
@@ -136,6 +223,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/team-requests"
               element={
@@ -144,6 +232,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/create-hackathon"
               element={
@@ -152,22 +241,25 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route 
-     path="/hackathons/:id/edit" 
-     element={
-       <ProtectedRoute>
-         <EditHackathon />
-       </ProtectedRoute>
-     } 
-   />
+              path="/hackathons/:id/edit" 
+              element={
+                <ProtectedRoute>
+                  <EditHackathon />
+                </ProtectedRoute>
+              } 
+            />
+            
             <Route 
-     path="/hackathons/:id/approvals" 
-     element={
-       <ProtectedRoute>
-         <TeamApprovals />
-       </ProtectedRoute>
-     } 
-   />
+              path="/hackathons/:id/approvals" 
+              element={
+                <ProtectedRoute>
+                  <TeamApprovals />
+                </ProtectedRoute>
+              } 
+            />
+            
             <Route
               path="/my-coordinations"
               element={
@@ -176,6 +268,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/coordinator/:hackathonId"
               element={
@@ -184,6 +277,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/judge/:hackathonId"
               element={
@@ -192,6 +286,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            
             <Route
               path="/teams/:id"
               element={

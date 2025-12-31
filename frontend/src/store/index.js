@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authAPI } from '../services/api';
 
+
 export const useAuthStore = create(
   persist(
     (set, get) => ({
@@ -10,84 +11,71 @@ export const useAuthStore = create(
       isAuthenticated: false,
       isLoading: false,
 
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
-      
-      setToken: (token) => {
+      // Set user and token after login
+      setAuth: (user, token) => {
+        console.log('✅ Setting auth:', { user: user.email, hasToken: !!token });
         localStorage.setItem('token', token);
-        set({ token, isAuthenticated: !!token });
-      },
-
-      login: async (credentials) => {
-        set({ isLoading: true });
-        try {
-          const response = await authAPI.login(credentials);
-          const { token, user } = response.data;
-          console.log('Login response:', user.roles[0]);
-          
-          localStorage.setItem('token', token);
-          set({ 
-            token, 
-            user, 
-            role: user.roles[0],
-            isAuthenticated: true,
-            isLoading: false 
-          });
-          
-          return response.data;
-        } catch (error) {
-          set({ isLoading: false });
-          throw error;
-        }
-      },
-
-      register: async (userData) => {
-        set({ isLoading: true });
-        try {
-          const response = await authAPI.register(userData);
-          const { token, user } = response.data;
-          
-          localStorage.setItem('token', token);
-          set({ 
-            token, 
-            user, 
-            role: user.roles[0],
-            isAuthenticated: true,
-            isLoading: false 
-          });
-          
-          return response.data;
-        } catch (error) {
-          set({ isLoading: false });
-          throw error;
-        }
-      },
-
-      logout: () => {
-        localStorage.removeItem('token');
-        set({ 
-          user: null, 
-          token: null, 
-          isAuthenticated: false 
+        localStorage.setItem('user', JSON.stringify(user));
+        set({
+          user,
+          token,
+          isAuthenticated: true,
         });
       },
 
-      fetchUser: async () => {
-        try {
-          const response = await authAPI.getMe();
-          set({ user: response.data.user });
-        } catch (error) {
-          get().logout();
+      // Update user info
+      setUser: (user) => {
+        console.log('✅ Updating user:', user.email);
+        localStorage.setItem('user', JSON.stringify(user));
+        set({ user });
+      },
+
+      // Logout - Clear everything
+      logout: () => {
+        console.log('🔴 Logging out - clearing all data');
+        
+        // Clear localStorage
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('auth-storage'); // Zustand persist key
+        
+        // Clear state
+        set({
+          user: null,
+          token: null,
+          isAuthenticated: false,
+        });
+      },
+
+      // Initialize from localStorage (called on app load)
+      initialize: () => {
+        console.log('🔍 Initializing auth from localStorage...');
+        
+        const token = localStorage.getItem('token');
+        const userStr = localStorage.getItem('user');
+        
+        if (token && userStr) {
+          try {
+            const user = JSON.parse(userStr);
+            console.log('✅ Found stored auth:', { user: user.email });
+            set({
+              user,
+              token,
+              isAuthenticated: true,
+            });
+          } catch (error) {
+            console.error('❌ Failed to parse user data:', error);
+            // Clear corrupted data
+            get().logout();
+          }
+        } else {
+          console.log('ℹ️ No stored auth found');
+          set({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+          });
         }
-      },
-
-      hasRole: (role) => {
-        const { user } = get();
-        return user?.roles?.includes(role) || false;
-      },
-
-      hasAnyRole: (roles) => {
-        const { user } = get();
-        return roles.some(role => user?.roles?.includes(role)) || false;
       },
     }),
     {
@@ -100,6 +88,10 @@ export const useAuthStore = create(
     }
   )
 );
+
+
+
+
 
 export const useHackathonStore = create((set) => ({
   hackathons: [],

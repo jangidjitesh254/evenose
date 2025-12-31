@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { User, Lock, CreditCard, Activity, Save, Mail, Phone, Building, CheckCircle, Calendar } from 'lucide-react';
-import { authAPI, paymentAPI } from '../services/api';
+import { authAPI } from '../services/api';
 import { useAuthStore } from '../store';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
