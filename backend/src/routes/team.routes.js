@@ -36,6 +36,7 @@ const {
   checkAutoApproval
 } = require('../controllers/team.controller');
 const { protect, isCoordinator, isJudge, checkCoordinatorPermission, authorize } = require('../middleware/auth');
+const { upload, configureUploadLimits } = require('../middleware/upload');
 
 // Student routes
 router.post('/register', protect, registerTeam);
@@ -44,7 +45,7 @@ router.get('/my/hackathon/:hackathonId', protect, getUserTeamForHackathon);
 router.get('/my/join-requests', protect, getMyJoinRequests);
 router.get('/:id', protect, getTeam);
 router.put('/:id', protect, updateTeam);
-router.post('/:id/submit', protect, submitProject);
+router.post('/:id/submit', protect, configureUploadLimits, upload.array('files', 10), submitProject);
 
 // Team confirmation
 router.post('/:teamId/confirm', protect, confirmTeam);

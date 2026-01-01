@@ -35,6 +35,11 @@ import EditHackathon from "./pages/EditHackathon";
 import TeamApprovals from "./pages/TeamApprovals";
 import CoordinatorTest from './pages/CoordinatorTest';
 import MyInvitations from './pages/MyInvitations';
+import OrganizerDashboard from './pages/OrganizerDashboard';
+import ManageParticipants from './pages/ManageParticipants';
+import TeamProgress from './pages/TeamProgress';
+import MyRoles from './pages/MyRoles';
+import RoundsManagement from './pages/RoundsManagement';
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }) {
@@ -292,6 +297,51 @@ function App() {
               element={
                 <ProtectedRoute>
                   <TeamDetail />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/teams/:id/progress"
+              element={
+                <ProtectedRoute>
+                  <TeamProgress />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/hackathons/:id/manage"
+              element={
+                <ProtectedRoute>
+                  <OrganizerDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/hackathons/:id/participants"
+              element={
+                <ProtectedRoute>
+                  <ManageParticipants />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/hackathons/:id/rounds"
+              element={
+                <ProtectedRoute>
+                  <RoundsManagement />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/my-roles"
+              element={
+                <ProtectedRoute>
+                  <MyRoles />
                 </ProtectedRoute>
               }
             />

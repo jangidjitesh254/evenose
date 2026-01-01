@@ -44,7 +44,9 @@ exports.registerTeam = async (req, res) => {
     }
 
     // Check if user is a coordinator (cannot participate as both)
-    if (req.user.isCoordinatorFor(hackathonId)) {
+    const User = require('../models/User');
+    const userDoc = await User.findById(req.user._id);
+    if (userDoc && userDoc.isCoordinatorFor(hackathonId)) {
       return res.status(400).json({
         success: false,
         message: 'Coordinators cannot participate in the hackathon'
@@ -124,10 +126,12 @@ exports.registerTeam = async (req, res) => {
 
     // Send confirmation email
     try {
-      await emailService.sendTeamRegistrationConfirmation(
-        { teamName, members: teamMembers, leader: req.user },
-        hackathon
-      );
+      // TODO: Implement sendTeamRegistrationConfirmation in email service
+      // await emailService.sendTeamRegistrationConfirmation(
+      //   { teamName, members: teamMembers, leader: req.user },
+      //   hackathon
+      // );
+      console.log('Team registration confirmation email would be sent here');
     } catch (emailError) {
       console.error('Failed to send confirmation email:', emailError);
       // Don't fail the registration if email fails
@@ -972,7 +976,7 @@ exports.assignTableAndTeamNumber = async (req, res) => {
 exports.submitProject = async (req, res) => {
   try {
     const { roundId, projectLink, demoLink, videoLink, presentationLink, githubRepo, description, techStack } = req.body;
-    
+
     const team = await Team.findById(req.params.id);
 
     if (!team) {
@@ -1002,6 +1006,19 @@ exports.submitProject = async (req, res) => {
       });
     }
 
+    // Process uploaded files
+    const files = [];
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        files.push({
+          name: file.originalname,
+          url: `/uploads/submissions/${file.filename}`,
+          type: file.mimetype,
+          size: file.size
+        });
+      });
+    }
+
     team.submissions.push({
       round: roundId,
       submittedAt: new Date(),
@@ -1011,6 +1028,7 @@ exports.submitProject = async (req, res) => {
       videoLink,
       presentationLink,
       githubRepo,
+      files,
       description,
       techStack,
       status: 'submitted'

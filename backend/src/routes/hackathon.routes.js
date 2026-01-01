@@ -17,7 +17,16 @@ const {
   resendCoordinatorInvite,
   searchCoordinatorsWithStatus,
   inviteJudge,
-  acceptJudgeInvitation
+  acceptJudgeInvitation,
+  updateRoundStatus,
+  getCurrentRound,
+  getHackathonStats,
+  getParticipants,
+  createRound,
+  getRounds,
+  updateRound,
+  deleteRound,
+  reorderRounds
 } = require('../controllers/hackathon.controller');
 const { protect, authorize, isOrganizer } = require('../middleware/auth');
 
@@ -49,5 +58,18 @@ router.put('/:id/coordinators/:userId/permissions', protect, isOrganizer, update
 
 // Judge management
 router.post('/:id/judges/invite', protect, isOrganizer, inviteJudge);
+
+// Rounds management
+router.get('/:id/rounds/current', getCurrentRound);
+router.get('/:id/rounds', getRounds);
+router.post('/:id/rounds', protect, isOrganizer, createRound);
+router.put('/:id/rounds/reorder', protect, isOrganizer, reorderRounds);
+router.put('/:id/rounds/:roundId', protect, isOrganizer, updateRound);
+router.put('/:id/rounds/:roundId/status', protect, isOrganizer, updateRoundStatus);
+router.delete('/:id/rounds/:roundId', protect, isOrganizer, deleteRound);
+
+// Stats and participants
+router.get('/:id/stats', protect, getHackathonStats);
+router.get('/:id/participants', protect, getParticipants);
 
 module.exports = router;

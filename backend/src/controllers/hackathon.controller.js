@@ -891,3 +891,455 @@ exports.searchCoordinatorsWithStatus = async (req, res) => {
     });
   }
 };
+
+// @desc    Update round status
+// @route   PUT /api/hackathons/:id/rounds/:roundId/status
+// @access  Private (Organizer, Admin)
+exports.updateRoundStatus = async (req, res) => {
+  try {
+    const { status, actualStartTime, actualEndTime } = req.body;
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    const round = hackathon.rounds.id(req.params.roundId);
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: 'Round not found'
+      });
+    }
+
+    if (status) round.status = status;
+    if (actualStartTime) round.actualStartTime = actualStartTime;
+    if (actualEndTime) round.actualEndTime = actualEndTime;
+
+    // If marking as ongoing, set currentRound flag and unset others
+    if (status === 'ongoing') {
+      hackathon.rounds.forEach(r => {
+        r.currentRound = r._id.toString() === req.params.roundId;
+      });
+    } else if (status === 'completed' || status === 'cancelled') {
+      round.currentRound = false;
+    }
+
+    await hackathon.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Round status updated successfully',
+      round
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get current round for hackathon
+// @route   GET /api/hackathons/:id/rounds/current
+// @access  Public
+exports.getCurrentRound = async (req, res) => {
+  try {
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    const currentRound = hackathon.rounds.find(r => r.currentRound === true);
+
+    res.status(200).json({
+      success: true,
+      currentRound: currentRound || null
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get hackathon statistics for organizer dashboard
+// @route   GET /api/hackathons/:id/stats
+// @access  Private (Organizer, Coordinator, Admin)
+exports.getHackathonStats = async (req, res) => {
+  try {
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    const Team = require('../models/Team');
+
+    // Get all teams for this hackathon
+    const teams = await Team.find({ hackathon: req.params.id });
+
+    // Calculate statistics
+    const totalTeams = teams.length;
+    const pendingApproval = teams.filter(t => t.registrationStatus === 'pending').length;
+    const approvedTeams = teams.filter(t => t.registrationStatus === 'approved').length;
+    const rejectedTeams = teams.filter(t => t.registrationStatus === 'rejected').length;
+    const checkedInTeams = teams.filter(t => t.checkIn?.isCheckedIn === true).length;
+    const eliminatedTeams = teams.filter(t => t.isEliminated === true).length;
+
+    // Calculate total participants
+    const totalParticipants = teams.reduce((sum, team) => {
+      return sum + team.getActiveMembers().length;
+    }, 0);
+
+    // Calculate revenue if paid event
+    const totalRevenue = teams
+      .filter(t => t.payment?.status === 'completed')
+      .reduce((sum, team) => sum + (team.payment?.amount || 0), 0);
+
+    // Get current round
+    const currentRound = hackathon.rounds.find(r => r.currentRound === true);
+
+    // Round statistics
+    const roundStats = hackathon.rounds.map(round => {
+      const submissions = teams.filter(t =>
+        t.submissions.some(s => s.round.toString() === round._id.toString())
+      ).length;
+
+      return {
+        roundId: round._id,
+        name: round.name,
+        status: round.status,
+        submissions,
+        totalTeams: approvedTeams
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        overview: {
+          totalTeams,
+          totalParticipants,
+          pendingApproval,
+          approvedTeams,
+          rejectedTeams,
+          checkedInTeams,
+          eliminatedTeams,
+          activeTeams: approvedTeams - eliminatedTeams,
+          totalRevenue
+        },
+        registration: {
+          maxTeams: hackathon.maxTeams,
+          currentRegistrations: hackathon.currentRegistrations,
+          percentFilled: hackathon.maxTeams > 0 ? (hackathon.currentRegistrations / hackathon.maxTeams * 100).toFixed(1) : 0
+        },
+        currentRound: currentRound || null,
+        rounds: roundStats,
+        hackathonStatus: hackathon.status
+      }
+    });
+  } catch (error) {
+    console.error('getHackathonStats error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get all participants for a hackathon
+// @route   GET /api/hackathons/:id/participants
+// @access  Private (Organizer, Coordinator, Admin)
+exports.getParticipants = async (req, res) => {
+  try {
+    const Team = require('../models/Team');
+
+    const teams = await Team.find({ hackathon: req.params.id })
+      .populate('members.user', 'fullName email username profilePicture institution')
+      .populate('leader', 'fullName email username profilePicture institution');
+
+    const participants = [];
+
+    teams.forEach(team => {
+      team.members.forEach(member => {
+        if (member.user && member.status === 'active') {
+          participants.push({
+            _id: member.user._id,
+            fullName: member.user.fullName,
+            email: member.user.email,
+            username: member.user.username,
+            profilePicture: member.user.profilePicture,
+            institution: member.user.institution,
+            teamId: team._id,
+            teamName: team.teamName,
+            role: member.role,
+            isLeader: member.user._id.toString() === team.leader._id.toString(),
+            teamStatus: team.registrationStatus,
+            checkedIn: member.checkIn?.isCheckedIn || false,
+            checkInTime: member.checkIn?.checkInTime
+          });
+        }
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      count: participants.length,
+      participants
+    });
+  } catch (error) {
+    console.error('getParticipants error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get all rounds for a hackathon
+// @route   GET /api/hackathons/:id/rounds
+// @access  Public
+exports.getRounds = async (req, res) => {
+  try {
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      rounds: hackathon.rounds.sort((a, b) => (a.order || 0) - (b.order || 0))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Create a new round for a hackathon
+// @route   POST /api/hackathons/:id/rounds
+// @access  Private (Organizer)
+exports.createRound = async (req, res) => {
+  try {
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    // Validate required fields
+    const { name, type, mode, startTime, endTime } = req.body;
+    if (!name || !type || !mode || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields: name, type, mode, startTime, endTime'
+      });
+    }
+
+    // Set order to next sequential number
+    const maxOrder = hackathon.rounds.length > 0
+      ? Math.max(...hackathon.rounds.map(r => r.order || 0))
+      : 0;
+
+    const newRound = {
+      ...req.body,
+      order: maxOrder + 1
+    };
+
+    hackathon.rounds.push(newRound);
+    await hackathon.save();
+
+    const createdRound = hackathon.rounds[hackathon.rounds.length - 1];
+
+    res.status(201).json({
+      success: true,
+      message: 'Round created successfully',
+      round: createdRound
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Update a round
+// @route   PUT /api/hackathons/:id/rounds/:roundId
+// @access  Private (Organizer)
+exports.updateRound = async (req, res) => {
+  try {
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    const round = hackathon.rounds.id(req.params.roundId);
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: 'Round not found'
+      });
+    }
+
+    // Update round fields (excluding status which has its own endpoint)
+    const allowedFields = [
+      'name', 'type', 'mode', 'description', 'startTime', 'endTime',
+      'maxScore', 'judgingCriteria', 'eliminationCount', 'isEliminationRound',
+      'location', 'meetingLink', 'instructions', 'submissionConfig'
+    ];
+
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        round[field] = req.body[field];
+      }
+    });
+
+    await hackathon.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Round updated successfully',
+      round
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Delete a round
+// @route   DELETE /api/hackathons/:id/rounds/:roundId
+// @access  Private (Organizer)
+exports.deleteRound = async (req, res) => {
+  try {
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    const round = hackathon.rounds.id(req.params.roundId);
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: 'Round not found'
+      });
+    }
+
+    // Check if round is currently active
+    if (round.currentRound) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete the current active round. Please change round status first.'
+      });
+    }
+
+    // Check if round has submissions
+    const Team = require('../models/Team');
+    const teamsWithSubmissions = await Team.countDocuments({
+      hackathon: req.params.id,
+      'submissions.round': req.params.roundId
+    });
+
+    if (teamsWithSubmissions > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete round with existing submissions (${teamsWithSubmissions} teams have submitted)`,
+        submissionCount: teamsWithSubmissions
+      });
+    }
+
+    // Remove the round
+    round.remove();
+    await hackathon.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Round deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Reorder rounds
+// @route   PUT /api/hackathons/:id/rounds/reorder
+// @access  Private (Organizer)
+exports.reorderRounds = async (req, res) => {
+  try {
+    const { roundIds } = req.body;
+
+    if (!Array.isArray(roundIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'roundIds must be an array'
+      });
+    }
+
+    const hackathon = await Hackathon.findById(req.params.id);
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hackathon not found'
+      });
+    }
+
+    // Update order field for each round
+    roundIds.forEach((roundId, index) => {
+      const round = hackathon.rounds.id(roundId);
+      if (round) {
+        round.order = index + 1;
+      }
+    });
+
+    await hackathon.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Rounds reordered successfully',
+      rounds: hackathon.rounds.sort((a, b) => (a.order || 0) - (b.order || 0))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};

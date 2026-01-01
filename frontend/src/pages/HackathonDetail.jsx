@@ -24,6 +24,8 @@ import {
   Copy,
   Search,
   Shield,
+  Settings,
+  TrendingUp,
 } from 'lucide-react';
 import { hackathonAPI, teamAPI } from '../services/api';
 import { useAuthStore } from '../store';
@@ -120,10 +122,20 @@ export default function HackathonDetail() {
 
   const isOrganizer = (hack = hackathon) => {
     if (!hack || !user) return false;
-    return hack.organizer?._id === user._id || 
-           hack.organizer === user._id || 
-           hack.organizer?._id === user.id || 
+    return hack.organizer?._id === user._id ||
+           hack.organizer === user._id ||
+           hack.organizer?._id === user.id ||
            hack.organizer === user.id;
+  };
+
+  const isCoordinator = (hack = hackathon) => {
+    if (!hack || !user) return false;
+    return user.coordinatorFor?.some(c =>
+      c.hackathon === hack._id ||
+      c.hackathon?._id === hack._id ||
+      c.hackathon === hack.id ||
+      c.hackathon?._id === hack.id
+    );
   };
 
   const isAdmin = () => {
@@ -349,14 +361,35 @@ export default function HackathonDetail() {
                   Share
                 </Button>
 
+                {/* Organizer Buttons */}
                 {isOrganizer() && (
+                  <>
+                    <Button
+                      icon={Settings}
+                      onClick={() => navigate(`/hackathons/${hackathon._id}/manage`)}
+                      className="bg-white text-indigo-600 hover:bg-indigo-50"
+                    >
+                      Dashboard
+                    </Button>
+                    <Button
+                      variant="outline"
+                      icon={Edit}
+                      onClick={() => navigate(`/hackathons/${hackathon._id}/edit`)}
+                      className="bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20"
+                    >
+                      Edit
+                    </Button>
+                  </>
+                )}
+
+                {/* Coordinator Buttons */}
+                {isCoordinator() && !isOrganizer() && (
                   <Button
-                    variant="outline"
-                    icon={Edit}
-                    onClick={() => navigate(`/hackathons/${hackathon._id}/edit`)}
-                    className="bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20"
+                    icon={Shield}
+                    onClick={() => navigate(`/coordinator/${hackathon._id}`)}
+                    className="bg-white text-indigo-600 hover:bg-indigo-50"
                   >
-                    Edit
+                    Coordinator Dashboard
                   </Button>
                 )}
 
@@ -404,7 +437,7 @@ export default function HackathonDetail() {
       {userTeam && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2 border-green-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-green-600" />
                 <div>
@@ -412,18 +445,31 @@ export default function HackathonDetail() {
                     You're registered as part of "{userTeam.teamName}"
                   </p>
                   <p className="text-sm text-gray-600">
-                    {userTeam.members?.length || 0} members • 
+                    {userTeam.members?.length || 0} members •
                     Status: {userTeam.registrationStatus}
                   </p>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/teams/${userTeam._id}`)}
-              >
-                View Team
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={Users}
+                  onClick={() => navigate(`/teams/${userTeam._id}`)}
+                >
+                  Team Details
+                </Button>
+                {userTeam.registrationStatus === 'approved' && (
+                  <Button
+                    size="sm"
+                    icon={TrendingUp}
+                    onClick={() => navigate(`/teams/${userTeam._id}/progress`)}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    View Progress
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -596,7 +642,7 @@ function OverviewTab({ hackathon }) {
                     )}
                   </div>
                   <div className="text-2xl lg:text-3xl font-bold text-indigo-600">
-                    {prize.amount ? `₹${prize.amount.toLocaleString()}` : 'TBA'}
+                    {prize.amount !== null && prize.amount !== undefined ? `₹${prize.amount.toLocaleString()}` : 'TBA'}
                   </div>
                 </div>
               ))}

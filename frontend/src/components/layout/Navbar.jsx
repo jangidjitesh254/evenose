@@ -172,6 +172,17 @@ export default function Navbar() {
                           </Link>
 
                           <Link
+                            to="/my-roles"
+                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 transition-colors text-gray-700 hover:text-indigo-600"
+                            onClick={() => setProfileMenuOpen(false)}
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+                              <Shield className="w-4 h-4 text-green-600" />
+                            </div>
+                            <span className="font-medium">My Roles</span>
+                          </Link>
+
+                          <Link
                             to="/settings"
                             className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 transition-colors text-gray-700 hover:text-indigo-600"
                             onClick={() => setProfileMenuOpen(false)}

@@ -24,6 +24,17 @@ const roundSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  status: {
+    type: String,
+    enum: ['pending', 'ongoing', 'completed', 'cancelled'],
+    default: 'pending'
+  },
+  actualStartTime: Date,
+  actualEndTime: Date,
+  currentRound: {
+    type: Boolean,
+    default: false
+  },
   maxScore: {
     type: Number,
     default: 100
@@ -44,7 +55,32 @@ const roundSchema = new mongoose.Schema({
   location: String, // For offline rounds
   meetingLink: String, // For online rounds
   instructions: String,
-  order: Number
+  order: Number,
+  submissionConfig: {
+    allowedFileTypes: {
+      type: [String],
+      default: ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'application/zip', 'application/x-zip-compressed']
+    },
+    maxFileSize: {
+      type: Number,
+      default: 52428800  // 50MB in bytes
+    },
+    maxFiles: {
+      type: Number,
+      default: 5
+    },
+    requireProjectLink: { type: Boolean, default: true },
+    requireDemoLink: { type: Boolean, default: false },
+    requireVideoLink: { type: Boolean, default: false },
+    requireGithubRepo: { type: Boolean, default: false },
+    requirePresentationLink: { type: Boolean, default: false },
+    customFields: [{
+      name: String,
+      type: { type: String, enum: ['text', 'url', 'file'], default: 'text' },
+      required: Boolean,
+      placeholder: String
+    }]
+  }
 });
 
 const scheduleEventSchema = new mongoose.Schema({

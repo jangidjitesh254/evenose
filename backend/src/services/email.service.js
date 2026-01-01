@@ -54,6 +54,27 @@ class EmailService {
       fromName: invitedBy.fullName || 'Hackathon Platform'
     });
   }
+
+  // Placeholder methods for team-related emails (to be implemented)
+  async sendJoinRequestNotification(user, team, requester) {
+    console.log(`📧 Join request notification would be sent to ${user.email}`);
+    return { success: true };
+  }
+
+  async sendTeamApprovalNotification(leader, team, hackathon) {
+    console.log(`📧 Team approval notification would be sent to ${leader.email}`);
+    return { success: true };
+  }
+
+  async sendTeamRejectionNotification(leader, team, hackathon, reason) {
+    console.log(`📧 Team rejection notification would be sent to ${leader.email}`);
+    return { success: true };
+  }
+
+  async sendJudgeInvitation(user, hackathon, invitedBy, token) {
+    console.log(`📧 Judge invitation would be sent to ${user.email}`);
+    return { success: true };
+  }
 }
 
 module.exports = new EmailService();  

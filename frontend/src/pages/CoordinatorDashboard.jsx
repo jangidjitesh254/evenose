@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Search, Download, UserCheck, Hash, ArrowLeft } from 'lucide-react';
+import { Search, Download, UserCheck, Hash, ArrowLeft, Users, CheckCircle, Clock, BarChart3 } from 'lucide-react';
 import { hackathonAPI, teamAPI } from '../services/api';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
@@ -19,7 +19,9 @@ export default function CoordinatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [checkInFilter, setCheckInFilter] = useState('all');
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showCheckInModal, setShowCheckInModal] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [assignData, setAssignData] = useState({ tableNumber: '', teamNumber: '' });
 
@@ -67,6 +69,48 @@ export default function CoordinatorDashboard() {
     }
   };
 
+  const handleMemberCheckIn = async (memberId) => {
+    if (!permissions.canCheckIn) {
+      toast.error('You do not have permission to check-in members');
+      return;
+    }
+
+    try {
+      await teamAPI.checkInMember(selectedTeam._id, memberId);
+      toast.success('Member checked in successfully!');
+      // Refresh the team data
+      const updatedTeam = await teamAPI.getById(selectedTeam._id);
+      setSelectedTeam(updatedTeam.data.team);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to check-in member:', error);
+      toast.error(error.response?.data?.message || 'Failed to check-in member');
+    }
+  };
+
+  const handleCheckInAll = async () => {
+    if (!permissions.canCheckIn) {
+      toast.error('You do not have permission to check-in teams');
+      return;
+    }
+
+    try {
+      const activeMembers = selectedTeam.members.filter(m => m.status === 'active');
+      for (const member of activeMembers) {
+        if (!member.checkIn?.isCheckedIn) {
+          await teamAPI.checkInMember(selectedTeam._id, member.user._id || member.user);
+        }
+      }
+      toast.success('All members checked in successfully!');
+      const updatedTeam = await teamAPI.getById(selectedTeam._id);
+      setSelectedTeam(updatedTeam.data.team);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to check-in all members:', error);
+      toast.error(error.response?.data?.message || 'Failed to check-in all members');
+    }
+  };
+
   const handleAssign = async () => {
     if (!permissions.canAssignTables) {
       toast.error('You do not have permission to assign tables/numbers');
@@ -94,9 +138,9 @@ export default function CoordinatorDashboard() {
     const csv = [
       ['Team Name', 'Members', 'Status', 'Check-in', 'Table', 'Team Number'].join(','),
       ...teams.map(team => [
-        team.name,
+        team.teamName,
         team.members?.length || 0,
-        team.status,
+        team.registrationStatus,
         team.checkIn?.status || 'not checked-in',
         team.tableNumber || 'N/A',
         team.teamNumber || 'N/A',
@@ -112,10 +156,50 @@ export default function CoordinatorDashboard() {
   };
 
   const filteredTeams = teams.filter(team => {
-    const matchesSearch = team.name.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || team.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesSearch = team.teamName?.toLowerCase().includes(search.toLowerCase()) ||
+                          team.projectTitle?.toLowerCase().includes(search.toLowerCase()) ||
+                          team.members?.some(m =>
+                            m.user?.name?.toLowerCase().includes(search.toLowerCase()) ||
+                            m.user?.email?.toLowerCase().includes(search.toLowerCase())
+                          );
+    const matchesStatus = statusFilter === 'all' || team.registrationStatus === statusFilter;
+
+    let matchesCheckIn = true;
+    if (checkInFilter === 'checked-in') {
+      matchesCheckIn = team.checkIn?.isCheckedIn === true;
+    } else if (checkInFilter === 'not-checked-in') {
+      matchesCheckIn = !team.checkIn?.isCheckedIn;
+    } else if (checkInFilter === 'partial') {
+      const activeMembers = team.members?.filter(m => m.status === 'active') || [];
+      const checkedInMembers = activeMembers.filter(m => m.checkIn?.isCheckedIn);
+      matchesCheckIn = checkedInMembers.length > 0 && checkedInMembers.length < activeMembers.length;
+    }
+
+    return matchesSearch && matchesStatus && matchesCheckIn;
   });
+
+  // Calculate statistics
+  const stats = {
+    totalTeams: teams.length,
+    approvedTeams: teams.filter(t => t.registrationStatus === 'approved').length,
+    pendingTeams: teams.filter(t => t.registrationStatus === 'pending').length,
+    checkedInTeams: teams.filter(t => t.checkIn?.isCheckedIn).length,
+    totalMembers: teams.reduce((sum, t) => sum + (t.members?.filter(m => m.status === 'active').length || 0), 0),
+    checkedInMembers: teams.reduce((sum, t) => {
+      const checkedIn = t.members?.filter(m => m.status === 'active' && m.checkIn?.isCheckedIn).length || 0;
+      return sum + checkedIn;
+    }, 0),
+  };
+
+  const getCheckInProgress = (team) => {
+    const activeMembers = team.members?.filter(m => m.status === 'active') || [];
+    const checkedInMembers = activeMembers.filter(m => m.checkIn?.isCheckedIn);
+    return {
+      checkedIn: checkedInMembers.length,
+      total: activeMembers.length,
+      percentage: activeMembers.length > 0 ? (checkedInMembers.length / activeMembers.length) * 100 : 0
+    };
+  };
 
   if (loading) {
     return (
@@ -144,13 +228,76 @@ export default function CoordinatorDashboard() {
           <p className="text-gray-600">Team Management Dashboard</p>
         </div>
 
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+          <Card>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Teams</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.totalTeams}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.approvedTeams} approved, {stats.pendingTeams} pending
+                </p>
+              </div>
+              <div className="p-3 bg-indigo-100 rounded-lg">
+                <Users className="w-6 h-6 text-indigo-600" />
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Team Check-ins</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.checkedInTeams}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.totalTeams > 0 ? Math.round((stats.checkedInTeams / stats.totalTeams) * 100) : 0}% complete
+                </p>
+              </div>
+              <div className="p-3 bg-green-100 rounded-lg">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Members</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.totalMembers}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Across all teams
+                </p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <Users className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Member Check-ins</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.checkedInMembers}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.totalMembers > 0 ? Math.round((stats.checkedInMembers / stats.totalMembers) * 100) : 0}% complete
+                </p>
+              </div>
+              <div className="p-3 bg-yellow-100 rounded-lg">
+                <BarChart3 className="w-6 h-6 text-yellow-600" />
+              </div>
+            </div>
+          </Card>
+        </div>
+
         {/* Filters and Actions */}
         <Card className="mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="md:col-span-2">
               <Input
                 icon={Search}
-                placeholder="Search teams..."
+                placeholder="Search teams, members..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -164,6 +311,16 @@ export default function CoordinatorDashboard() {
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
+            </select>
+            <select
+              value={checkInFilter}
+              onChange={(e) => setCheckInFilter(e.target.value)}
+              className="input"
+            >
+              <option value="all">All Check-in</option>
+              <option value="checked-in">Checked In</option>
+              <option value="partial">Partially Checked In</option>
+              <option value="not-checked-in">Not Checked In</option>
             </select>
             <Button icon={Download} onClick={exportTeams} variant="outline">
               Export
@@ -203,20 +360,35 @@ export default function CoordinatorDashboard() {
                 {filteredTeams.map((team) => (
                   <tr key={team._id}>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{team.name}</div>
+                      <div className="text-sm font-medium text-gray-900">{team.teamName}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {team.members?.length || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant={team.status === 'approved' ? 'success' : 'warning'}>
-                        {team.status}
+                      <Badge variant={team.registrationStatus === 'approved' ? 'success' : 'warning'}>
+                        {team.registrationStatus}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant={team.checkIn?.status === 'checked-in' ? 'success' : 'secondary'}>
-                        {team.checkIn?.status || 'not checked-in'}
-                      </Badge>
+                      {(() => {
+                        const progress = getCheckInProgress(team);
+                        return (
+                          <div>
+                            <Badge variant={progress.checkedIn === progress.total && progress.total > 0 ? 'success' : progress.checkedIn > 0 ? 'warning' : 'secondary'}>
+                              {progress.checkedIn}/{progress.total} members
+                            </Badge>
+                            {progress.total > 0 && (
+                              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                                <div
+                                  className={`h-1.5 rounded-full ${progress.percentage === 100 ? 'bg-green-600' : progress.percentage > 0 ? 'bg-yellow-600' : 'bg-gray-400'}`}
+                                  style={{ width: `${progress.percentage}%` }}
+                                ></div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {team.tableNumber || team.teamNumber ? (
@@ -229,11 +401,15 @@ export default function CoordinatorDashboard() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                      {permissions.canCheckIn && team.checkIn?.status !== 'checked-in' && (
+                      {permissions.canCheckIn && (
                         <Button
                           size="sm"
                           icon={UserCheck}
-                          onClick={() => handleCheckIn(team._id)}
+                          onClick={() => {
+                            setSelectedTeam(team);
+                            setShowCheckInModal(true);
+                          }}
+                          variant={getCheckInProgress(team).percentage === 100 ? 'outline' : 'primary'}
                         >
                           Check-in
                         </Button>
@@ -269,6 +445,96 @@ export default function CoordinatorDashboard() {
           )}
         </Card>
 
+        {/* Member Check-in Modal */}
+        <Modal
+          isOpen={showCheckInModal}
+          onClose={() => {
+            setShowCheckInModal(false);
+            setSelectedTeam(null);
+          }}
+          title={`Team Check-in: ${selectedTeam?.teamName}`}
+        >
+          <div className="space-y-4">
+            {/* Overall Progress */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-semibold text-gray-900">Check-in Progress</h4>
+                {selectedTeam && (() => {
+                  const progress = getCheckInProgress(selectedTeam);
+                  return (
+                    <Badge variant={progress.percentage === 100 ? 'success' : progress.percentage > 0 ? 'warning' : 'secondary'}>
+                      {progress.checkedIn}/{progress.total} Members
+                    </Badge>
+                  );
+                })()}
+              </div>
+              {selectedTeam && (() => {
+                const progress = getCheckInProgress(selectedTeam);
+                return (
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full ${progress.percentage === 100 ? 'bg-green-600' : progress.percentage > 0 ? 'bg-yellow-600' : 'bg-gray-400'}`}
+                      style={{ width: `${progress.percentage}%` }}
+                    ></div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Member List */}
+            <div className="space-y-2">
+              <h4 className="font-semibold text-gray-900 mb-3">Team Members</h4>
+              {selectedTeam?.members
+                ?.filter(m => m.status === 'active')
+                .map((member, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">
+                        {member.user?.name || 'Unknown Member'}
+                        {member.role === 'leader' && (
+                          <Badge variant="info" className="ml-2 text-xs">Leader</Badge>
+                        )}
+                      </p>
+                      <p className="text-sm text-gray-600">{member.user?.email || 'No email'}</p>
+                      {member.checkIn?.isCheckedIn && member.checkIn?.checkedInAt && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Checked in at {new Date(member.checkIn.checkedInAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                    <div className="ml-4">
+                      {member.checkIn?.isCheckedIn ? (
+                        <Badge variant="success">
+                          <CheckCircle className="w-4 h-4 inline mr-1" />
+                          Checked In
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => handleMemberCheckIn(member.user?._id || member.user)}
+                        >
+                          Check In
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-4 justify-end mt-6 pt-4 border-t">
+              <Button variant="outline" onClick={() => setShowCheckInModal(false)}>
+                Close
+              </Button>
+              {selectedTeam && getCheckInProgress(selectedTeam).percentage < 100 && (
+                <Button onClick={handleCheckInAll} icon={UserCheck}>
+                  Check In All Members
+                </Button>
+              )}
+            </div>
+          </div>
+        </Modal>
+
         {/* Assign Modal */}
         <Modal
           isOpen={showAssignModal}
@@ -276,7 +542,7 @@ export default function CoordinatorDashboard() {
             setShowAssignModal(false);
             setSelectedTeam(null);
           }}
-          title={`Assign Numbers - ${selectedTeam?.name}`}
+          title={`Assign Numbers - ${selectedTeam?.teamName}`}
         >
           <div className="space-y-4">
             <Input
